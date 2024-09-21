@@ -175,6 +175,17 @@ def transcribe(
     if word_timestamps and task == "translate":
         warnings.warn("Word-level timestamps on translations may not be reliable.")
 
+    def result_seems_silent(result: DecodingResult) -> bool:
+        """Check for no voice activity"""
+        seems_silent = False
+        if no_speech_threshold is not None:
+            seems_silent = result.no_speech_prob > no_speech_threshold
+            if logprob_threshold is not None and result.avg_logprob > logprob_threshold:
+                # don't skip if the logprob is high enough, despite the no_speech_prob
+                seems_silent = False
+
+        return seems_silent
+
     def decode_with_fallback(segment: torch.Tensor) -> DecodingResult:
         temperatures = (
             [temperature] if isinstance(temperature, (int, float)) else temperature
@@ -205,10 +216,7 @@ def transcribe(
                 and decode_result.avg_logprob < logprob_threshold
             ):
                 needs_fallback = True  # average log probability is too low
-            if (
-                no_speech_threshold is not None
-                and decode_result.no_speech_prob > no_speech_threshold
-            ):
+            if result_seems_silent(decode_result):
                 needs_fallback = False  # silence
             if not needs_fallback:
                 break
@@ -279,19 +287,9 @@ def transcribe(
             result: DecodingResult = decode_with_fallback(mel_segment)
             tokens = torch.tensor(result.tokens)
 
-            if no_speech_threshold is not None:
-                # no voice activity check
-                should_skip = result.no_speech_prob > no_speech_threshold
-                if (
-                    logprob_threshold is not None
-                    and result.avg_logprob > logprob_threshold
-                ):
-                    # don't skip if the logprob is high enough, despite the no_speech_prob
-                    should_skip = False
-
-                if should_skip:
-                    seek += segment_size  # fast-forward to the next segment boundary
-                    continue
+            if result_seems_silent(result):
+                seek += segment_size  # fast-forward to the next segment boundary
+                continue
 
             previous_seek = seek
             current_segments = []
