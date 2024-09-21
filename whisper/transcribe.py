@@ -177,13 +177,12 @@ def transcribe(
 
     def result_seems_silent(result: DecodingResult) -> bool:
         """Check for no voice activity"""
-        # don't skip if the logprob is high enough, despite the no_speech_prob
-        if no_speech_threshold is not None and (
-            logprob_threshold is None or result.avg_logprob <= logprob_threshold
-        ):
-            return result.no_speech_prob > no_speech_threshold
-
-        return False
+        return (
+            no_speech_threshold is not None
+            and result.no_speech_prob > no_speech_threshold
+            # don't skip if the logprob is high enough, despite the no_speech_prob
+            and (logprob_threshold is None or result.avg_logprob <= logprob_threshold)
+        )
 
     def decode_with_fallback(segment: torch.Tensor) -> DecodingResult:
         temperatures = (
